@@ -5965,7 +5965,14 @@ iter_instruction(struct tgsi_iterate_context *iter,
       emit_buff(&ctx->glsl_strbufs, "%s = mix(%s, %s, greaterThanEqual(%s, vec4(0.0)))%s;\n", dsts[0], srcs[1], srcs[2], srcs[0], writemask);
       break;
    case TGSI_OPCODE_UCMP:
-      emit_buff(&ctx->glsl_strbufs, "%s = mix(%s, %s, notEqual(floatBitsToUint(%s), uvec4(0.0)))%s;\n", dsts[0], srcs[2], srcs[1], srcs[0], writemask);
+      /* UCMP selects 32-bit values that are usually integers kept in float
+       * registers. Select their bits instead of using mix() on floats: an
+       * integer below 2^23 is a denormal float, and ANGLE's Metal backend
+       * returns 0 for such a value from a boolean mix(). */
+      emit_buff(&ctx->glsl_strbufs, "%s = uintBitsToFloat((floatBitsToUint(%s) & ~(uvec4(notEqual(floatBitsToUint(%s), uvec4(0U))) * 0xffffffffU)) | "
+                "(floatBitsToUint(%s) & (uvec4(notEqual(floatBitsToUint(%s), uvec4(0U))) * 0xffffffffU)))%s;\n",
+                dsts[0], srcs[2], srcs[0], srcs[1], srcs[0], writemask);
+      ctx->shader_req_bits |= SHADER_REQ_INTS;
       break;
    case TGSI_OPCODE_END:
       if (iter->processor.Processor == TGSI_PROCESSOR_VERTEX) {
